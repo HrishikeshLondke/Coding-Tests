@@ -1,0 +1,112 @@
+ 1. Create a field on Account named "Number of Contacts". Populate this field with the number of contacts related to an account. 
+trigger ContactTrigger on Contact (after insert, after update, after delete, after undelete) {
+    Set<Id> accIdSet = new Set<Id>();
+    if(trigger.isAfter && (trigger.isInsert || trigger.isUpdate || trigger.isUndelete) ){
+        for(Contact objCon : trigger.new){
+            accIdSet.add(objCon.AccountId);
+        }
+    }    
+    if(trigger.isAfter && (trigger.isDelete || trigger.isUpdate) ){
+        for(Contact objCon : trigger.old){   
+            accIdSet.add(objCon.AccountId);
+        }
+    }    
+    Map<Id,Account> accMap = new Map<Id,Account>();
+    if(!accIdSet.isEmpty()){
+        for(Account objAcc : [select Id, Number_of_Contacts__c, (select Id from Contacts) from Account where Id  IN : accIdSet]){   
+            List<Contact> conList =  objAcc.Contacts; 
+            objAcc.Number_of_Contacts__c =  conList.size();
+            accMap.put(objAcc.Id, objAcc);
+        }
+    }    
+    if(!accMap.isEmpty())
+        Database.update(accMap.values(), false);    
+}
+
+2. Build a basic lightning component that can query a list of 10 most recently created accounts and display it using a lightning app. 
+HTML file.
+<template>
+    <lightning-card title="Account List">
+
+        <div style="height: 360px;">
+            <lightning-datatable
+                    key-field="id"
+                    data={data}
+                    show-row-number-column
+                    row-number-offset={rowOffset}
+                    hide-checkbox-column
+                    columns={columns}>
+            </lightning-datatable>
+        </div>
+
+    </lightning-card>     
+</template>
+
+Js file.
+import { LightningElement, wire } from 'lwc';
+import accountList from '@salesforce/apex/AccountProvider.accountList';
+
+const columns = [
+    { label: 'Name', fieldName: 'Name', type: 'text' },
+    { label: 'Type', fieldName: 'Type', type: 'text' },
+    { label: 'Rating', fieldName: 'Rating', type: 'text' },
+    { label: 'SLA', fieldName: 'SLA__c', type: 'text' },
+    { label: 'Created Date', fieldName: 'CreatedDate' },
+];
+
+export default class AccountTableInterview extends LightningElement {
+
+    data = [];
+    columns = columns;
+    
+    @wire(accountList)
+    accList({data, error}){
+        if(data){
+            this.data = data
+        }
+        if(error){
+            console.log('Error '+JSON.stringify(error))
+        }
+    }
+}
+
+MetaXML
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>56.0</apiVersion>
+    <isExposed>true</isExposed>
+    <targets>
+        <target>lightning__RecordPage</target>       
+    </targets>
+</LightningComponentBundle>
+
+Apex Class 
+public with sharing class AccountProvider {
+    
+    @AuraEnabled(cacheable=true)
+    public static List<Account> accountList(){
+        try {
+            return [select Id, Name, Type, Rating, SLA__c, CreatedDate from Account order by CreatedDate desc LIMIT 10 ];
+        } catch (Exception e) {
+            throw new AuraHandledException(e.getMessage());
+        }
+    }
+}
+
+3. Make a basic http callout and print the result using system.debug
+
+global class HttpCalloutAPI {
+
+    public static void getHttpRequest() {
+        http http = new http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint('https://postman-echo.com/get?foo1=bar1&foo2=bar2');
+        request.setMethod('GET');                
+        HttpResponse response = http.send(request);
+        
+        system.debug('Status Code = '+response.getStatusCode());        
+        if(response.getStatusCode() == 200){           
+            System.debug('Data = '+response.getBody());   
+        }
+    }
+}
